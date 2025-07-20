@@ -19,6 +19,7 @@ gg_fert <- ggplot(df_fert, aes(x = Year, y = World_Historic)) +
   labs(x = "Year",
        y = "Global Fertilizer Consumption (Tonnes/Yr)",
        title = "Flux") +
+  xlim(1850, 2010) +
   theme_bw(base_size = 14)
 
 gg_fert
@@ -29,6 +30,7 @@ gg_nitr <- ggplot(df_nitr, aes(x = Year, y = Nitrogen.flux.Mtons.yr.1)) +
   labs(x = "Year",
        y = "Nitrogen Flux (Mtons per year)",
        title = "Flux") +
+  xlim(1850, 2010) +
   theme_bw(base_size = 14)
 
 gg_nitr
@@ -38,6 +40,7 @@ gg_wetland <- ggplot(df_wetland, aes(x = x, y = y)) +
   labs(x = "Year",
        y = "Global Percent Wetland Loss",
        title = "Connectivity") +
+  xlim(1850, 2010) +
   theme_bw(base_size = 14)
 
 gg_wetland
@@ -47,6 +50,7 @@ gg_dz <- ggplot(df_dz, aes(x = x, y = y)) +
   labs(x = "Year",
        y = "Reported Number of Deadzones",
        title = "Imbalance") +
+  xlim(1850, 2010) +
   theme_bw(base_size = 14)
 
 gg_dz
@@ -54,5 +58,9 @@ gg_dz
 gg_nutrient_grid <- plot_grid(gg_nitr, gg_wetland, gg_dz, nrow = 1, align = "hv")
 
 gg_nutrient_grid
+
+
+
+
 
 
