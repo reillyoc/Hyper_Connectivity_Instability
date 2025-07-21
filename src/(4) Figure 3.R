@@ -15,4 +15,4 @@ source("../Connectivity/src/(3) Invasive Species.R")
 gg_fig_3 <- plot_grid(gg_nutrient_grid, gg_disease_grid, gg_invasive_grid,
                       nrow = 3, align = "hv")
 
-
+gg_fig_3
