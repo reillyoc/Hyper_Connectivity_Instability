@@ -25,7 +25,7 @@ df_alien_count <- df_alien %>%
 gg_alien <- ggplot(df_alien_count, aes(x = Year, y = number_aliens)) +
   geom_smooth(se = F, color = "black") +
   labs(x = "Year",
-       y = "Number of Alien Species Recorded",
+       y = "# of Alien Species Recorded",
        title = "Flux") +
   xlim(1700, 2010) +
   theme_bw(base_size = 14)
@@ -35,7 +35,7 @@ gg_alien
 gg_ships <- ggplot(df_ships, aes(x = year, y = shipcalls)) +
   geom_smooth(se = F, color = "black") +
   labs(x = "Year",
-       y = "Number of Ship Calls",
+       y = "# of Ship Calls",
        title = "Connectivity") +
   xlim(1700, 2010) +
   theme_bw(base_size = 14)
@@ -45,14 +45,14 @@ gg_ships
 gg_invasive <- ggplot(df_invasive, aes(x = x, y = y)) +
   geom_smooth(se = F, color = "black") +
   labs(x = "Year",
-       y = "Number of Reported Negative Impacts",
+       y = "# of Reported Negative Impacts",
        title = "Imbalance") +
   xlim(1700, 2010) +
   theme_bw(base_size = 14)
 
 gg_invasive
 
-gg_invasive_grid <- plot_grid(gg_alien, gg_ships, gg_invasive, nrow = 1, align = "hv")
+gg_invasive_grid <- plot_grid(gg_alien, gg_ships, gg_invasive, nrow = 1, align = "hv", labels = c("g", "h", "i"))
 
 gg_invasive_grid
 

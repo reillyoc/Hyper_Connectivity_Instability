@@ -48,14 +48,14 @@ gg_wetland
 gg_dz <- ggplot(df_dz, aes(x = x, y = y)) +
   geom_smooth(se = F, color = "black") +
   labs(x = "Year",
-       y = "Reported Number of Deadzones",
+       y = "Reported # of Deadzones",
        title = "Imbalance") +
   xlim(1850, 2010) +
   theme_bw(base_size = 14)
 
 gg_dz
 
-gg_nutrient_grid <- plot_grid(gg_nitr, gg_wetland, gg_dz, nrow = 1, align = "hv")
+gg_nutrient_grid <- plot_grid(gg_nitr, gg_wetland, gg_dz, nrow = 1, align = "hv", labels = c("a", "b", "c"))
 
 gg_nutrient_grid
 

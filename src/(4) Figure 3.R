@@ -16,3 +16,11 @@ gg_fig_3 <- plot_grid(gg_nutrient_grid, gg_disease_grid, gg_invasive_grid,
                       nrow = 3, align = "hv")
 
 gg_fig_3
+
+ggsave("../Connectivity/Figures/Figure 3.jpeg", plot = gg_fig_3, dpi = 300, width = 10, height = 12)
+
+
+
+
+
+
