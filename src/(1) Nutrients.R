@@ -15,43 +15,39 @@ df_dz <- read.csv("../Connectivity/Data/Nutrients/Num_Deadzones.csv", header = T
 
 
 gg_fert <- ggplot(df_fert, aes(x = Year, y = World_Historic)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "Global Fertilizer Consumption (Tonnes/Yr)",
-       title = "Flux") +
+  geom_smooth(se = F, color = "#FFC107", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1850, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_fert
 
 
 gg_nitr <- ggplot(df_nitr, aes(x = Year, y = Nitrogen.flux.Mtons.yr.1)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "Nitrogen Flux (Mtons per year)",
-       title = "Flux") +
+  geom_smooth(se = F, color = "#FFC107", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1850, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_nitr
 
 gg_wetland <- ggplot(df_wetland, aes(x = x, y = y)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "Global Percent Wetland Loss",
-       title = "Connectivity") +
+  geom_smooth(se = F, color = "#1E88E5", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1850, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_wetland
 
 gg_dz <- ggplot(df_dz, aes(x = x, y = y)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "Reported # of Deadzones",
-       title = "Imbalance") +
+  geom_smooth(se = F, color = "#D81B60", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1850, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_dz
 
@@ -59,6 +55,9 @@ gg_nutrient_grid <- plot_grid(gg_nitr, gg_wetland, gg_dz, nrow = 1, align = "hv"
 
 gg_nutrient_grid
 
+ggsave("../Connectivity/Figures/Figure 3a.jpeg", plot = gg_nitr, dpi = 300, width = 3, height = 3)
+ggsave("../Connectivity/Figures/Figure 3b.jpeg", plot = gg_wetland, dpi = 300, width = 3, height = 3)
+ggsave("../Connectivity/Figures/Figure 3c.jpeg", plot = gg_dz, dpi = 300, width = 3, height = 3)
 
 
 

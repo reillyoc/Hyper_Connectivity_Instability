@@ -23,38 +23,41 @@ df_alien_count <- df_alien %>%
   arrange(Year)
 
 gg_alien <- ggplot(df_alien_count, aes(x = Year, y = number_aliens)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "# of Alien Species Recorded",
-       title = "Flux") +
+  geom_smooth(se = F, color = "#FFC107", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1700, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_alien
 
 gg_ships <- ggplot(df_ships, aes(x = year, y = shipcalls)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "# of Ship Calls",
-       title = "Connectivity") +
+  geom_smooth(se = F, color = "#1E88E5", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1700, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_ships
 
 gg_invasive <- ggplot(df_invasive, aes(x = x, y = y)) +
-  geom_smooth(se = F, color = "black") +
-  labs(x = "Year",
-       y = "# of Reported Negative Impacts",
-       title = "Imbalance") +
+  geom_smooth(se = F, color = "#D81B60", linewidth = 3) +
+  labs(x = "Year") +
   xlim(1700, 2010) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 14) +
+  theme(axis.title.y = element_blank())
 
 gg_invasive
 
 gg_invasive_grid <- plot_grid(gg_alien, gg_ships, gg_invasive, nrow = 1, align = "hv", labels = c("g", "h", "i"))
 
 gg_invasive_grid
+
+ggsave("../Connectivity/Figures/Figure 3g.jpeg", plot = gg_alien, dpi = 300, width = 3, height = 3)
+ggsave("../Connectivity/Figures/Figure 3h.jpeg", plot = gg_ships, dpi = 300, width = 3, height = 3)
+ggsave("../Connectivity/Figures/Figure 3i.jpeg", plot = gg_invasive, dpi = 300, width = 3, height = 3)
+
+
 
 
 
