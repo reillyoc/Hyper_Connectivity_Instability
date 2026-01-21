@@ -23,7 +23,8 @@ df_alien_count <- df_alien %>%
   arrange(Year)
 
 gg_alien <- ggplot(df_alien_count, aes(x = Year, y = number_aliens)) +
-  geom_smooth(se = F, color = "#FFC107", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.5) +
+  geom_smooth(se = F, color = "#F79D1E", linewidth = 3) +
   labs(x = "Year") +
   xlim(1700, 2010) +
   theme_bw(base_size = 14) +
@@ -32,7 +33,8 @@ gg_alien <- ggplot(df_alien_count, aes(x = Year, y = number_aliens)) +
 gg_alien
 
 gg_ships <- ggplot(df_ships, aes(x = year, y = shipcalls)) +
-  geom_smooth(se = F, color = "#1E88E5", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.5) +
+  geom_smooth(se = F, color = "#075149", linewidth = 3) +
   labs(x = "Year") +
   xlim(1700, 2010) +
   theme_bw(base_size = 14) +
@@ -41,7 +43,8 @@ gg_ships <- ggplot(df_ships, aes(x = year, y = shipcalls)) +
 gg_ships
 
 gg_invasive <- ggplot(df_invasive, aes(x = x, y = y)) +
-  geom_smooth(se = F, color = "#D81B60", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.5) +
+  geom_smooth(se = F, color = "#800000", linewidth = 3) +
   labs(x = "Year") +
   xlim(1700, 2010) +
   theme_bw(base_size = 14) +

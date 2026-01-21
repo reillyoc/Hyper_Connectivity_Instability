@@ -15,7 +15,8 @@ df_dz <- read.csv("../Connectivity/Data/Nutrients/Num_Deadzones.csv", header = T
 
 
 gg_fert <- ggplot(df_fert, aes(x = Year, y = World_Historic)) +
-  geom_smooth(se = F, color = "#FFC107", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.2) +
+  geom_smooth(se = F, color = "#F79D1E", linewidth = 3) +
   labs(x = "Year") +
   xlim(1850, 2010) +
   theme_bw(base_size = 14) +
@@ -25,7 +26,8 @@ gg_fert
 
 
 gg_nitr <- ggplot(df_nitr, aes(x = Year, y = Nitrogen.flux.Mtons.yr.1)) +
-  geom_smooth(se = F, color = "#FFC107", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.2) +
+  geom_smooth(se = F, color = "#F79D1E", linewidth = 3) +
   labs(x = "Year") +
   xlim(1850, 2010) +
   theme_bw(base_size = 14) +
@@ -34,7 +36,8 @@ gg_nitr <- ggplot(df_nitr, aes(x = Year, y = Nitrogen.flux.Mtons.yr.1)) +
 gg_nitr
 
 gg_wetland <- ggplot(df_wetland, aes(x = x, y = y)) +
-  geom_smooth(se = F, color = "#1E88E5", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.2) +
+  geom_smooth(se = F, color = "#075149", linewidth = 3) +
   labs(x = "Year") +
   xlim(1850, 2010) +
   theme_bw(base_size = 14) +
@@ -43,7 +46,8 @@ gg_wetland <- ggplot(df_wetland, aes(x = x, y = y)) +
 gg_wetland
 
 gg_dz <- ggplot(df_dz, aes(x = x, y = y)) +
-  geom_smooth(se = F, color = "#D81B60", linewidth = 3) +
+  # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.2) +
+  geom_smooth(se = F, color = "#800000", linewidth = 3) +
   labs(x = "Year") +
   xlim(1850, 2010) +
   theme_bw(base_size = 14) +
@@ -51,11 +55,11 @@ gg_dz <- ggplot(df_dz, aes(x = x, y = y)) +
 
 gg_dz
 
-gg_nutrient_grid <- plot_grid(gg_nitr, gg_wetland, gg_dz, nrow = 1, align = "hv", labels = c("a", "b", "c"))
+gg_nutrient_grid <- plot_grid(gg_fert, gg_wetland, gg_dz, nrow = 1, align = "hv", labels = c("a", "b", "c"))
 
 gg_nutrient_grid
 
-ggsave("../Connectivity/Figures/Figure 3a.jpeg", plot = gg_nitr, dpi = 300, width = 3, height = 3)
+ggsave("../Connectivity/Figures/Figure 3a.jpeg", plot = gg_fert, dpi = 300, width = 3, height = 3)
 ggsave("../Connectivity/Figures/Figure 3b.jpeg", plot = gg_wetland, dpi = 300, width = 3, height = 3)
 ggsave("../Connectivity/Figures/Figure 3c.jpeg", plot = gg_dz, dpi = 300, width = 3, height = 3)
 
