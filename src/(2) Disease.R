@@ -28,7 +28,8 @@ df_airplane_sum <- df_airplane_melt %>%
 
 gg_eid <- ggplot(df_eid, aes(x = x, y = y)) +
   # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.5) +
-  geom_smooth(se = F, color = "#F79D1E", linewidth = 3) +
+  geom_smooth(se = F, color = "black",#
+              linewidth = 3) +
   labs(x = "Year") +
   xlim(1950, 2010) +
   theme_bw(base_size = 14) +
@@ -38,7 +39,8 @@ gg_eid
 
 gg_airline <- ggplot(df_airplane_sum, aes(x = Year, y = sum_passengers/1e10)) +
   # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.5) +
-  geom_smooth(se = F, color = "#075149", linewidth = 3) +
+  geom_smooth(se = F, color = "black",#
+              linewidth = 3) +
   labs(x = "Year") +
   xlim(1950, 2010) +
   theme_bw(base_size = 14) +
@@ -48,7 +50,8 @@ gg_airline
 
 gg_outbreaks <- ggplot(df_outbreaks, aes(x = x, y = y)) +
   # geom_point(size = 2, color = "grey20", color = "black", stroke = 0.5, alpha = 0.5) +
-  geom_smooth(se = F, color = "#800000", linewidth = 3) +
+  geom_smooth(se = F, color = "black",#
+              linewidth = 3) +
   labs(x = "Year") +
   xlim(1950, 2010) +
   theme_bw(base_size = 14) +
