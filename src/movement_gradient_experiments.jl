@@ -10,6 +10,7 @@
 #    Rosenzweig-MacArthur resource-consumer dynamics occur in each node, and
 #    dispersal moves resources and consumers through a connected hub-satellite
 #    network with directed satellite shortcuts.
+
 using Statistics
 using LinearAlgebra
 using DelimitedFiles
