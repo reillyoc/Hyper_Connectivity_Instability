@@ -1,7 +1,4 @@
-#!/usr/bin/env julia
 
-# Movement-gradient experiments for two spatial food-web models.
-#
 # 1. Terminal N-R-C model:
 #    Nutrient fluxes move directionally toward terminal node 5. Only N moves;
 #    resources and consumers do not recycle back into the nutrient pool.
@@ -14,8 +11,7 @@
 using Statistics
 using LinearAlgebra
 using DelimitedFiles
-using SciMLBase: ODEProblem, solve
-using OrdinaryDiffEqTsit5: Tsit5
+using DifferentialEquations
 using Random
 using Plots
 
@@ -32,13 +28,11 @@ const SATELLITE_SHORTCUTS = [
     (5, 3),
 ]
 
-# All CSVs and plots are written here. `mkpath` below creates the folder when
-# it does not already exist.
-const OUTPUT_DIR = normpath(joinpath(@__DIR__, "movement_gradient_output"))
 
-# Send plots to Positron's plot pane only in an interactive Julia session.
-# Batch runs still save every plot without trying to open an IDE display.
-const DISPLAY_PLOTS_IN_IDE = isinteractive()
+const OUTPUT_DIR = normpath(joinpath(@__DIR__, "movement_gradient_output_final_management"))
+
+
+const DISPLAY_PLOTS_IN_VSCODE = true
 
 coefficient_of_variation(x; eps_value=1e-8) = begin
     m = mean(skipmissing(x))
@@ -626,45 +620,75 @@ function scan_hub_rm_annual_pulses(;
     return rows, adjacency, satellite_shortcuts
 end
 
-function slow_incident_links(adjacency, d_fast, d_slow, node)
-    link_rates = link_rates_from_adjacency(adjacency, d_fast)
+"""
+Set the transfer rate for every directed currency flow entering or leaving
+`node`. The model stores rates on directed links, so changing both incoming
+and outgoing incident links is the explicit implementation of slowing
+currency transfer at a node.
+"""
+function slow_currency_transfer_at_node(adjacency, d_fast, d_slow, node)
+    transfer_rates = link_rates_from_adjacency(adjacency, d_fast)
     for source in axes(adjacency, 1), target in axes(adjacency, 2)
         if adjacency[source, target] != 0 && (source == node || target == node)
-            link_rates[source, target] = d_slow
+            transfer_rates[source, target] = d_slow
         end
     end
-    return link_rates
+    return transfer_rates
 end
 
-function scan_hub_rm_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:0.05:1.25)), transient=800.0)
+"""Reduce transfer only on directed links leaving `node`."""
+function slow_outgoing_currency_transfer_from_node(adjacency, d_fast, d_slow, node)
+    transfer_rates = link_rates_from_adjacency(adjacency, d_fast)
+    for target in axes(adjacency, 2)
+        if adjacency[node, target] != 0
+            transfer_rates[node, target] = d_slow
+        end
+    end
+    return transfer_rates
+end
+
+function scan_hub_rm_slowdown(;
+    d_fast=1.25,
+    d_values=reverse(collect(0.0:0.05:1.25)),
+    transient=800.0,
+)
     adjacency, satellite_shortcuts = well_mixed_hub_adjacency()
     scenarios = [
-        ("slow_hub_1", "slow all links to/from hub"),
-        ("mean_satellite_nodes", "mean across satellite-node slowdowns"),
-        ("slow_all_hub_links", "slow all links"),
+        ("all_nodes", "slow currency transfer in/out of all nodes", "all"),
+        ("hub_node", "slow currency transfer in/out of hub node 1", string(HUB)),
+        (
+            "mean_random_nodes",
+            "mean in/out slowdown across satellite nodes",
+            join(SATELLITES, ";"),
+        ),
     ]
 
     rows = Vector{NamedTuple}()
-    for (scenario, label) in scenarios, d_slow in d_values
-        link_rates = link_rates_from_adjacency(adjacency, d_fast)
-        if scenario == "slow_hub_1"
-            link_rates = slow_incident_links(adjacency, d_fast, d_slow, 1)
-        elseif scenario == "slow_all_hub_links"
-            link_rates = link_rates_from_adjacency(adjacency, d_slow)
-        end
-
-        metric, synchrony = if scenario == "mean_satellite_nodes"
-            node_cvs = Float64[]
+    for (scenario, label, target_nodes) in scenarios, d_slow in d_values
+        metric, synchrony = if scenario == "mean_random_nodes"
+            node_metrics = Float64[]
             node_synchronies = Float64[]
-            for satellite in SATELLITES
-                single_node_rates = slow_incident_links(adjacency, d_fast, d_slow, satellite)
-                sol = solve_hub_rm(single_node_rates; adjacency)
-                push!(node_cvs, average_consumer_temporal_cv(sol; transient))
+            for node in SATELLITES
+                transfer_rates = slow_currency_transfer_at_node(
+                    adjacency,
+                    d_fast,
+                    d_slow,
+                    node,
+                )
+                sol = solve_hub_rm(transfer_rates; adjacency)
+                push!(node_metrics, average_consumer_temporal_cv(sol; transient))
                 push!(node_synchronies, mean_pairwise_consumer_synchrony(sol; transient))
             end
-            (mean(node_cvs), mean(node_synchronies))
+            (mean(node_metrics), mean(node_synchronies))
         else
-            sol = solve_hub_rm(link_rates; adjacency)
+            transfer_rates = if scenario == "all_nodes"
+                link_rates_from_adjacency(adjacency, d_slow)
+            elseif scenario == "hub_node"
+                slow_currency_transfer_at_node(adjacency, d_fast, d_slow, HUB)
+            else
+                error("Unknown node slowdown scenario: $scenario")
+            end
+            sol = solve_hub_rm(transfer_rates; adjacency)
             (
                 average_consumer_temporal_cv(sol; transient),
                 mean_pairwise_consumer_synchrony(sol; transient),
@@ -675,6 +699,7 @@ function scan_hub_rm_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:0.05:1
             model="hub_rm",
             scenario=scenario,
             label=label,
+            target_nodes=target_nodes,
             d_slow=d_slow,
             percent_reduction=percent_reduction_from_baseline(d_fast, d_slow),
             metric=metric,
@@ -682,6 +707,39 @@ function scan_hub_rm_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:0.05:1
         ))
     end
     return rows, adjacency, satellite_shortcuts
+end
+
+function validate_stabilize_then_destabilize(rows)
+    for scenario in unique(row.scenario for row in rows)
+        scenario_rows = sort(
+            [row for row in rows if row.scenario == scenario && isfinite(row.metric)];
+            by=row -> row.percent_reduction,
+        )
+        metrics = [row.metric for row in scenario_rows]
+        minimum_index = argmin(metrics)
+        baseline_metric = first(metrics)
+        minimum_metric = metrics[minimum_index]
+        final_metric = last(metrics)
+
+        has_interior_minimum = 1 < minimum_index < length(metrics)
+        initially_stabilizes = minimum_metric < baseline_metric
+        subsequently_destabilizes = final_metric > minimum_metric
+        if !(has_interior_minimum && initially_stabilizes && subsequently_destabilizes)
+            error("Scenario $scenario does not stabilize and then destabilize")
+        end
+
+        println(
+            "Validated ",
+            scenario,
+            ": CV ",
+            round(baseline_metric; digits=4),
+            " -> ",
+            round(minimum_metric; digits=4),
+            " -> ",
+            round(final_metric; digits=4),
+        )
+    end
+    return nothing
 end
 
 function slow_outgoing_links(adjacency, d_fast, d_slow, node)
@@ -694,34 +752,50 @@ function slow_outgoing_links(adjacency, d_fast, d_slow, node)
     return link_rates
 end
 
-function scan_terminal_nrc_reference_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:0.05:1.25)), transient=600.0)
+"""Reduce nutrient transfer only on directed links leaving `node`."""
+function slow_terminal_outgoing_currency_transfer(d_fast, d_slow, node)
+    node_rates = fill(d_fast, TERMINAL_N_NODES)
+    node_rates[node] = d_slow
+    return node_rates
+end
+
+function scan_terminal_nrc_reference_slowdown(;
+    d_fast=1.25,
+    d_values=reverse(collect(0.0:0.05:1.25)),
+    transient=600.0,
+)
+    hub_node = 4
+    non_hub_nonterminal_nodes = [1, 2, 3]
     scenarios = [
-        ("all_links", "slow all links"),
-        ("slow_link_4_to_5", "slow terminal link 4 -> 5"),
-        ("mean_random_links", "mean across non-terminal links"),
+        ("all_nodes", "slow outgoing nutrient transfer from all nodes", "all"),
+        ("hub_node", "slow outgoing nutrient transfer from hub node 4", string(hub_node)),
+        (
+            "mean_random_nodes",
+            "mean outgoing slowdown across non-hub, non-terminal nodes",
+            join(non_hub_nonterminal_nodes, ";"),
+        ),
     ]
 
     rows = Vector{NamedTuple}()
-    for (scenario, label) in scenarios, d_slow in d_values
-        node_rates = fill(d_fast, TERMINAL_N_NODES)
-        if scenario == "slow_link_4_to_5"
-            node_rates[4] = d_slow
-        elseif scenario == "all_links"
-            node_rates .= d_slow
-        end
-
-        metric = if scenario == "mean_random_links"
-            link_cvs = Float64[]
-            for source in (1, 2, 3)
-                single_link_rates = fill(d_fast, TERMINAL_N_NODES)
-                single_link_rates[source] = d_slow
-                sol = solve_terminal_nrc(single_link_rates)
+    for (scenario, label, target_nodes) in scenarios, d_slow in d_values
+        metric = if scenario == "mean_random_nodes"
+            node_cvs = Float64[]
+            for node in non_hub_nonterminal_nodes
+                node_rates = slow_terminal_outgoing_currency_transfer(d_fast, d_slow, node)
+                sol = solve_terminal_nrc(node_rates)
                 indices = post_transient_indices(sol.t; transient)
                 c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
-                push!(link_cvs, coefficient_of_variation(c5))
+                push!(node_cvs, coefficient_of_variation(c5))
             end
-            mean(link_cvs)
+            mean(node_cvs)
         else
+            node_rates = if scenario == "all_nodes"
+                fill(d_slow, TERMINAL_N_NODES)
+            elseif scenario == "hub_node"
+                slow_terminal_outgoing_currency_transfer(d_fast, d_slow, hub_node)
+            else
+                error("Unknown terminal node slowdown scenario: $scenario")
+            end
             sol = solve_terminal_nrc(node_rates)
             indices = post_transient_indices(sol.t; transient)
             c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
@@ -731,6 +805,7 @@ function scan_terminal_nrc_reference_slowdown(; d_fast=1.25, d_values=reverse(co
             model="terminal_nrc",
             scenario=scenario,
             label=label,
+            target_nodes=target_nodes,
             d_slow=d_slow,
             percent_reduction=percent_reduction_from_baseline(d_fast, d_slow),
             metric=metric,
@@ -750,9 +825,9 @@ function scan_hub_rm_reference_slowdown(; d_fast=1.25, d_values=reverse(collect(
     rows = Vector{NamedTuple}()
     for (scenario, label) in scenarios, d_slow in d_values
         link_rates = if scenario == "slow_hub_1"
-            slow_incident_links(adjacency, d_fast, d_slow, HUB)
+            slow_currency_transfer_at_node(adjacency, d_fast, d_slow, HUB)
         elseif scenario == "slow_node_3"
-            slow_incident_links(adjacency, d_fast, d_slow, 3)
+            slow_currency_transfer_at_node(adjacency, d_fast, d_slow, 3)
         elseif scenario == "slow_from_node_3"
             slow_outgoing_links(adjacency, d_fast, d_slow, 3)
         else
@@ -784,7 +859,8 @@ const COLORS = Dict(
     "mean_random_links" => "#D9271C",
     "slow_hub_1" => "#3568B8",
     "slow_node_3" => "#D9271C",
-    "mean_satellite_nodes" => "#D9271C",
+    "hub_node" => "#3568B8",
+    "mean_random_nodes" => "#D9271C",
     "slow_from_node_3" => "#D9271C",
     "slow_all_hub_links" => "#5F5F5F",
     "constant" => "#5F5F5F",
@@ -801,7 +877,9 @@ const LINE_STYLES = Dict(
     "mean_random_links" => :solid,
     "slow_hub_1" => :solid,
     "slow_node_3" => :solid,
-    "mean_satellite_nodes" => :solid,
+    "all_nodes" => :solid,
+    "hub_node" => :solid,
+    "mean_random_nodes" => :solid,
     "slow_from_node_3" => :solid,
     "slow_all_hub_links" => :solid,
     "constant" => :solid,
@@ -843,6 +921,23 @@ function synchrony_rows_to_matrix(rows)
             row.d_slow,
             row.percent_reduction,
             row.synchrony,
+        )
+    end
+    return matrix
+end
+
+function node_slowdown_rows_to_matrix(rows; response_field=:metric)
+    matrix = Matrix{Any}(undef, length(rows), 7)
+    for (i, row) in enumerate(rows)
+        response = response_field == :metric ? row.metric : row.synchrony
+        matrix[i, :] .= (
+            row.model,
+            row.scenario,
+            row.label,
+            row.target_nodes,
+            row.d_slow,
+            row.percent_reduction,
+            response,
         )
     end
     return matrix
@@ -1124,7 +1219,7 @@ function plot_network_configurations(output_stem)
     pdf_path = output_stem * ".pdf"
     savefig(combined, png_path)
     savefig(combined, pdf_path)
-    if DISPLAY_PLOTS_IN_IDE
+    if DISPLAY_PLOTS_IN_VSCODE
         display(combined)
     end
     println("Saved plot: " * png_path)
@@ -1238,7 +1333,7 @@ function plot_rows(rows, output_stem; title="", xlabel, ylabel, xfield=:movement
         error("PNG was not saved: " * png_path)
     end
 
-    if DISPLAY_PLOTS_IN_IDE
+    if DISPLAY_PLOTS_IN_VSCODE
         display(p)
     end
 
@@ -1356,7 +1451,7 @@ function plot_terminal_pulse_figure_s1(rows, output_stem)
     pdf_path = output_stem * ".pdf"
     savefig(figure, png_path)
     savefig(figure, pdf_path)
-    if DISPLAY_PLOTS_IN_IDE
+    if DISPLAY_PLOTS_IN_VSCODE
         display(figure)
     end
     println("Saved plot: " * png_path)
@@ -1471,7 +1566,7 @@ function plot_hub_pulse_figure(rows, output_stem)
     pdf_path = output_stem * ".pdf"
     savefig(figure, png_path)
     savefig(figure, pdf_path)
-    if DISPLAY_PLOTS_IN_IDE
+    if DISPLAY_PLOTS_IN_VSCODE
         display(figure)
     end
     println("Saved plot: " * png_path)
@@ -1481,18 +1576,18 @@ end
 
 function main()
     mkpath(OUTPUT_DIR)
+    println("Running final hybrid management implementation")
+    println("Directional model: outgoing transfer only")
+    println("Well-mixed model: incoming and outgoing transfer")
+    println("Slowdown scenarios: all_nodes, hub_node, mean_random_nodes")
+    println("Fresh outputs will be written to " * OUTPUT_DIR)
 
-    println("[1/6] Running terminal-model movement scan ...")
     terminal_speedup_rows = scan_terminal_nrc_speedup()
-    println("[2/6] Running terminal-model slowdown scan ...")
     terminal_slowdown_rows = scan_terminal_nrc_reference_slowdown()
-    println("[3/6] Running terminal-model pulse scan ...")
     terminal_pulse_rows = scan_terminal_nrc_annual_pulses()
-    println("[4/6] Running hub-model movement scan ...")
     hub_speedup_rows, hub_adjacency, hub_satellite_choices = scan_hub_rm_speedup()
-    println("[5/6] Running hub-model slowdown scan ...")
     hub_slowdown_rows, _, _ = scan_hub_rm_slowdown()
-    println("[6/6] Running hub-model pulse scan ...")
+    validate_stabilize_then_destabilize(hub_slowdown_rows)
     hub_pulse_rows, _, _ = scan_hub_rm_annual_pulses()
 
     save_table(
@@ -1503,8 +1598,16 @@ function main()
 
     save_table(
         joinpath(OUTPUT_DIR, "terminal_nrc_slowdown_scan.csv"),
-        ["model", "scenario", "label", "d_slow", "percent_reduction", "cv_C5"],
-        mitigation_rows_to_matrix(terminal_slowdown_rows),
+        [
+            "model",
+            "scenario",
+            "label",
+            "target_nodes",
+            "d_slow",
+            "percent_reduction",
+            "cv_C5",
+        ],
+        node_slowdown_rows_to_matrix(terminal_slowdown_rows),
     )
 
     save_table(
@@ -1547,11 +1650,12 @@ function main()
             "model",
             "scenario",
             "label",
+            "target_nodes",
             "d_slow",
             "percent_reduction",
             "average_consumer_temporal_cv",
         ],
-        mitigation_rows_to_matrix(hub_slowdown_rows),
+        node_slowdown_rows_to_matrix(hub_slowdown_rows),
     )
 
     save_table(
@@ -1560,11 +1664,12 @@ function main()
             "model",
             "scenario",
             "label",
+            "target_nodes",
             "d_slow",
             "percent_reduction",
             "average_pairwise_consumer_synchrony",
         ],
-        synchrony_rows_to_matrix(hub_slowdown_rows),
+        node_slowdown_rows_to_matrix(hub_slowdown_rows; response_field=:synchrony),
     )
 
     save_table(
@@ -1607,7 +1712,7 @@ function main()
         terminal_slowdown_rows,
         joinpath(OUTPUT_DIR, "terminal_nrc_slowdown_scan");
         title="Directional terminal N-R-C model: targeted nutrient slow-down",
-        xlabel="% reduction in nutrient flux rate",
+        xlabel="Reduction in outgoing nutrient-transfer rate (%)",
         ylabel="Consumer CV",
         xfield=:percent_reduction,
         legend=:bottomleft,
@@ -1665,8 +1770,8 @@ function main()
     plot_rows(
         hub_slowdown_rows,
         joinpath(OUTPUT_DIR, "hub_rm_slowdown_scan");
-        title="Well-mixed hub CR metacommunity: targeted dispersal slow-down",
-        xlabel="% reduction in link dispersal rate",
+        title="Well-mixed hub CR metacommunity: node currency-transfer slowdown",
+        xlabel="Reduction in node currency-transfer rate (%)",
         ylabel="Average consumer CV",
         xfield=:percent_reduction,
         legend=:topleft,
@@ -1674,7 +1779,7 @@ function main()
     plot_rows(
         hub_slowdown_rows,
         joinpath(OUTPUT_DIR, "hub_rm_slowdown_synchrony_scan");
-        xlabel="Reduction from high dispersal baseline (%)",
+        xlabel="Reduction in node currency-transfer rate (%)",
         ylabel="Average pairwise consumer synchrony",
         xfield=:percent_reduction,
         yfield=:synchrony,
@@ -1689,9 +1794,4 @@ function main()
     println("Saved speed-up and targeted slow-down experiments to " * OUTPUT_DIR)
 end
 
-# Loading the file in Positron defines the functions without starting the
-# long-running experiment. Run `main()` in the Julia console when using
-# Positron, or execute this file directly from a terminal.
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
