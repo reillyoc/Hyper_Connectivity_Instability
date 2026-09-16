@@ -1,18 +1,12 @@
 
-# 1. Terminal N-R-C model:
-#    Nutrient fluxes move directionally toward terminal node 5. Only N moves;
-#    resources and consumers do not recycle back into the nutrient pool.
+# Two spatial food-web models and their movement experiments.
 #
-# 2. Well-mixed hub model:
-#    Rosenzweig-MacArthur resource-consumer dynamics occur in each node, and
-#    dispersal moves resources and consumers through a connected hub-satellite
-#    network with directed satellite shortcuts.
+# 1. A terminal N-R-C network in which nutrients move toward node 5.
+# 2. A hub network with local Rosenzweig-MacArthur dynamics and dispersal.
 
 using Statistics
-using LinearAlgebra
 using DelimitedFiles
 using DifferentialEquations
-using Random
 using Plots
 
 gr()
@@ -29,10 +23,13 @@ const SATELLITE_SHORTCUTS = [
 ]
 
 
-const OUTPUT_DIR = normpath(joinpath(@__DIR__, "movement_gradient_output_final_management"))
-
-
+const OUTPUT_DIR = "/Users/charlotteward/Documents/Connectivity/Code"
 const DISPLAY_PLOTS_IN_VSCODE = true
+
+const MOVEMENT_RATES = 0.0:0.05:1.25
+const TERMINAL_TRANSIENT = 600.0
+const HUB_TRANSIENT = 800.0
+const FAST_RATE = 1.25
 
 coefficient_of_variation(x; eps_value=1e-8) = begin
     m = mean(skipmissing(x))
@@ -80,8 +77,18 @@ function percent_reduction_from_baseline(d_fast, d_slow)
     return 100.0 * (d_fast - d_slow) / d_fast
 end
 
-# ---------------------------------------------------------------------------
-# Terminal N-R-C model
+function state_series(sol, state_index; transient)
+    indices = post_transient_indices(sol.t; transient)
+    return [sol.u[k][state_index] for k in indices]
+end
+
+terminal_series(sol, compartment, node; transient=TERMINAL_TRANSIENT) =
+    state_series(sol, (compartment - 1) * TERMINAL_N_NODES + node; transient)
+
+consumer_series(sol, node; transient=HUB_TRANSIENT) =
+    state_series(sol, HUB_N_NODES + node; transient)
+
+# ---- Terminal N-R-C model -------------------------------------------------
 
 const TERMINAL_EDGES_FROM = [1, 2, 3, 4]
 const TERMINAL_EDGES_TO = [2, 4, 4, 5]
@@ -237,12 +244,11 @@ function solve_terminal_nrc_annual_pulse(
     )
 end
 
-function scan_terminal_nrc_speedup(; d_values=collect(0.0:0.05:1.25), transient=600.0)
+function scan_terminal_nrc_speedup(; d_values=MOVEMENT_RATES, transient=TERMINAL_TRANSIENT)
     rows = Vector{NamedTuple}()
     for d in d_values
         sol = solve_terminal_nrc(fill(d, TERMINAL_N_NODES))
-        indices = post_transient_indices(sol.t; transient)
-        c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
+        c5 = terminal_series(sol, 3, 5; transient)
         push!(rows, (
             model="terminal_nrc",
             scenario="all_links",
@@ -255,12 +261,12 @@ function scan_terminal_nrc_speedup(; d_values=collect(0.0:0.05:1.25), transient=
 end
 
 function scan_terminal_nrc_annual_pulses(;
-    constant_flux_values=collect(0.0:0.05:1.25),
+    constant_flux_values=MOVEMENT_RATES,
     pulse_multipliers=(4.0, 8.0),
     pulse_period=1.0,
     pulse_duration=0.1,
     pulse_start=0.0,
-    transient=600.0,
+    transient=TERMINAL_TRANSIENT,
 )
     pulse_duty = pulse_duration / pulse_period
     treatments = [
@@ -291,10 +297,9 @@ function scan_terminal_nrc_annual_pulses(;
             )
         end
 
-        indices = post_transient_indices(sol.t; transient)
-        n5 = [sol.u[k][5] for k in indices]
-        r5 = [sol.u[k][TERMINAL_N_NODES + 5] for k in indices]
-        c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
+        n5 = terminal_series(sol, 1, 5; transient)
+        r5 = terminal_series(sol, 2, 5; transient)
+        c5 = terminal_series(sol, 3, 5; transient)
         push!(rows, (
             model="terminal_nrc",
             scenario=scenario,
@@ -316,7 +321,7 @@ function scan_terminal_nrc_annual_pulses(;
     return rows
 end
 
-function scan_terminal_nrc_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:0.05:1.25)), transient=600.0)
+function scan_terminal_nrc_slowdown(; d_fast=FAST_RATE, d_values=reverse(MOVEMENT_RATES), transient=TERMINAL_TRANSIENT)
     scenarios = [
         ("slow_link_4_to_5", "slow N link 4 -> 5"),
         ("mean_other_links", "mean across other N links"),
@@ -338,15 +343,13 @@ function scan_terminal_nrc_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:
                 single_link_rates = fill(d_fast, TERMINAL_N_NODES)
                 single_link_rates[source] = d_slow
                 sol = solve_terminal_nrc(single_link_rates)
-                indices = post_transient_indices(sol.t; transient)
-                c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
+                c5 = terminal_series(sol, 3, 5; transient)
                 push!(other_link_cvs, coefficient_of_variation(c5))
             end
             mean(other_link_cvs)
         else
             sol = solve_terminal_nrc(node_rates)
-            indices = post_transient_indices(sol.t; transient)
-            c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
+            c5 = terminal_series(sol, 3, 5; transient)
             coefficient_of_variation(c5)
         end
 
@@ -362,8 +365,7 @@ function scan_terminal_nrc_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:
     return rows
 end
 
-# ---------------------------------------------------------------------------
-# Well-mixed hub-satellite Rosenzweig-MacArthur model
+# ---- Hub Rosenzweig-MacArthur model ---------------------------------------
 
 struct HubRMParams
     growth_rates::Vector{Float64}
@@ -516,37 +518,15 @@ function solve_hub_rm_annual_pulse(
     )
 end
 
-function average_consumer_temporal_cv(sol; transient=800.0)
-    indices = post_transient_indices(sol.t; transient)
+function average_consumer_temporal_cv(sol; transient=HUB_TRANSIENT)
     cvs = [
-        coefficient_of_variation([sol.u[k][HUB_N_NODES + node] for k in indices])
+        coefficient_of_variation(consumer_series(sol, node; transient))
         for node in 1:HUB_N_NODES
     ]
     return mean(skipmissing(cvs))
 end
 
-function mean_pairwise_consumer_synchrony(sol; transient=800.0)
-    indices = post_transient_indices(sol.t; transient)
-    pairwise_correlations = Float64[]
-
-    for i in 1:(HUB_N_NODES - 1)
-        for j in (i + 1):HUB_N_NODES
-            x = [sol.u[k][HUB_N_NODES + i] for k in indices]
-            y = [sol.u[k][HUB_N_NODES + j] for k in indices]
-
-            if std(x) < eps(Float64) || std(y) < eps(Float64)
-                push!(pairwise_correlations, NaN)
-            else
-                push!(pairwise_correlations, cor(x, y))
-            end
-        end
-    end
-
-    valid_correlations = filter(isfinite, pairwise_correlations)
-    return isempty(valid_correlations) ? NaN : mean(valid_correlations)
-end
-
-function scan_hub_rm_speedup(; d_values=collect(0.0:0.05:1.25), transient=800.0)
+function scan_hub_rm_speedup(; d_values=MOVEMENT_RATES, transient=HUB_TRANSIENT)
     adjacency, satellite_shortcuts = well_mixed_hub_adjacency()
     rows = Vector{NamedTuple}()
     for d in d_values
@@ -557,19 +537,18 @@ function scan_hub_rm_speedup(; d_values=collect(0.0:0.05:1.25), transient=800.0)
             label="all resource and consumer links",
             movement_rate=d,
             metric=average_consumer_temporal_cv(sol; transient),
-            synchrony=mean_pairwise_consumer_synchrony(sol; transient),
         ))
     end
     return rows, adjacency, satellite_shortcuts
 end
 
 function scan_hub_rm_annual_pulses(;
-    constant_dispersal_values=collect(0.0:0.05:1.25),
+    constant_dispersal_values=MOVEMENT_RATES,
     pulse_multipliers=(4.0, 8.0),
     pulse_period=1.0,
     pulse_duration=0.1,
     pulse_start=0.0,
-    transient=800.0,
+    transient=HUB_TRANSIENT,
 )
     adjacency, satellite_shortcuts = well_mixed_hub_adjacency()
     pulse_duty = pulse_duration / pulse_period
@@ -614,18 +593,12 @@ function scan_hub_rm_annual_pulses(;
             pulse_period=pulse_period,
             pulse_duration=active_duration,
             metric=average_consumer_temporal_cv(sol; transient),
-            synchrony=mean_pairwise_consumer_synchrony(sol; transient),
         ))
     end
     return rows, adjacency, satellite_shortcuts
 end
 
-"""
-Set the transfer rate for every directed currency flow entering or leaving
-`node`. The model stores rates on directed links, so changing both incoming
-and outgoing incident links is the explicit implementation of slowing
-currency transfer at a node.
-"""
+
 function slow_currency_transfer_at_node(adjacency, d_fast, d_slow, node)
     transfer_rates = link_rates_from_adjacency(adjacency, d_fast)
     for source in axes(adjacency, 1), target in axes(adjacency, 2)
@@ -648,9 +621,9 @@ function slow_outgoing_currency_transfer_from_node(adjacency, d_fast, d_slow, no
 end
 
 function scan_hub_rm_slowdown(;
-    d_fast=1.25,
-    d_values=reverse(collect(0.0:0.05:1.25)),
-    transient=800.0,
+    d_fast=FAST_RATE,
+    d_values=reverse(MOVEMENT_RATES),
+    transient=HUB_TRANSIENT,
 )
     adjacency, satellite_shortcuts = well_mixed_hub_adjacency()
     scenarios = [
@@ -665,9 +638,8 @@ function scan_hub_rm_slowdown(;
 
     rows = Vector{NamedTuple}()
     for (scenario, label, target_nodes) in scenarios, d_slow in d_values
-        metric, synchrony = if scenario == "mean_random_nodes"
+        metric = if scenario == "mean_random_nodes"
             node_metrics = Float64[]
-            node_synchronies = Float64[]
             for node in SATELLITES
                 transfer_rates = slow_currency_transfer_at_node(
                     adjacency,
@@ -677,9 +649,8 @@ function scan_hub_rm_slowdown(;
                 )
                 sol = solve_hub_rm(transfer_rates; adjacency)
                 push!(node_metrics, average_consumer_temporal_cv(sol; transient))
-                push!(node_synchronies, mean_pairwise_consumer_synchrony(sol; transient))
             end
-            (mean(node_metrics), mean(node_synchronies))
+            mean(node_metrics)
         else
             transfer_rates = if scenario == "all_nodes"
                 link_rates_from_adjacency(adjacency, d_slow)
@@ -689,10 +660,7 @@ function scan_hub_rm_slowdown(;
                 error("Unknown node slowdown scenario: $scenario")
             end
             sol = solve_hub_rm(transfer_rates; adjacency)
-            (
-                average_consumer_temporal_cv(sol; transient),
-                mean_pairwise_consumer_synchrony(sol; transient),
-            )
+            average_consumer_temporal_cv(sol; transient)
         end
 
         push!(rows, (
@@ -703,7 +671,6 @@ function scan_hub_rm_slowdown(;
             d_slow=d_slow,
             percent_reduction=percent_reduction_from_baseline(d_fast, d_slow),
             metric=metric,
-            synchrony=synchrony,
         ))
     end
     return rows, adjacency, satellite_shortcuts
@@ -752,7 +719,6 @@ function slow_outgoing_links(adjacency, d_fast, d_slow, node)
     return link_rates
 end
 
-"""Reduce nutrient transfer only on directed links leaving `node`."""
 function slow_terminal_outgoing_currency_transfer(d_fast, d_slow, node)
     node_rates = fill(d_fast, TERMINAL_N_NODES)
     node_rates[node] = d_slow
@@ -760,9 +726,9 @@ function slow_terminal_outgoing_currency_transfer(d_fast, d_slow, node)
 end
 
 function scan_terminal_nrc_reference_slowdown(;
-    d_fast=1.25,
-    d_values=reverse(collect(0.0:0.05:1.25)),
-    transient=600.0,
+    d_fast=FAST_RATE,
+    d_values=reverse(MOVEMENT_RATES),
+    transient=TERMINAL_TRANSIENT,
 )
     hub_node = 4
     non_hub_nonterminal_nodes = [1, 2, 3]
@@ -783,8 +749,7 @@ function scan_terminal_nrc_reference_slowdown(;
             for node in non_hub_nonterminal_nodes
                 node_rates = slow_terminal_outgoing_currency_transfer(d_fast, d_slow, node)
                 sol = solve_terminal_nrc(node_rates)
-                indices = post_transient_indices(sol.t; transient)
-                c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
+                c5 = terminal_series(sol, 3, 5; transient)
                 push!(node_cvs, coefficient_of_variation(c5))
             end
             mean(node_cvs)
@@ -797,8 +762,7 @@ function scan_terminal_nrc_reference_slowdown(;
                 error("Unknown terminal node slowdown scenario: $scenario")
             end
             sol = solve_terminal_nrc(node_rates)
-            indices = post_transient_indices(sol.t; transient)
-            c5 = [sol.u[k][2 * TERMINAL_N_NODES + 5] for k in indices]
+            c5 = terminal_series(sol, 3, 5; transient)
             coefficient_of_variation(c5)
         end
         push!(rows, (
@@ -814,7 +778,7 @@ function scan_terminal_nrc_reference_slowdown(;
     return rows
 end
 
-function scan_hub_rm_reference_slowdown(; d_fast=1.25, d_values=reverse(collect(0.0:0.05:1.25)), transient=800.0)
+function scan_hub_rm_reference_slowdown(; d_fast=FAST_RATE, d_values=reverse(MOVEMENT_RATES), transient=HUB_TRANSIENT)
     adjacency, satellite_shortcuts = well_mixed_hub_adjacency()
     scenarios = [
         ("slow_hub_1", "slow all links to/from hub"),
@@ -842,14 +806,12 @@ function scan_hub_rm_reference_slowdown(; d_fast=1.25, d_values=reverse(collect(
             d_slow=d_slow,
             percent_reduction=percent_reduction_from_baseline(d_fast, d_slow),
             metric=average_consumer_temporal_cv(sol; transient),
-            synchrony=mean_pairwise_consumer_synchrony(sol; transient),
         ))
     end
     return rows, adjacency, satellite_shortcuts
 end
 
-# ---------------------------------------------------------------------------
-# Output
+# ---- Output ---------------------------------------------------------------
 
 const COLORS = Dict(
     "all_nodes" => "#5F5F5F",
@@ -911,25 +873,9 @@ function mitigation_rows_to_matrix(rows)
     return matrix
 end
 
-function synchrony_rows_to_matrix(rows)
-    matrix = Matrix{Any}(undef, length(rows), 6)
-    for (i, row) in enumerate(rows)
-        matrix[i, :] .= (
-            row.model,
-            row.scenario,
-            row.label,
-            row.d_slow,
-            row.percent_reduction,
-            row.synchrony,
-        )
-    end
-    return matrix
-end
-
-function node_slowdown_rows_to_matrix(rows; response_field=:metric)
+function node_slowdown_rows_to_matrix(rows)
     matrix = Matrix{Any}(undef, length(rows), 7)
     for (i, row) in enumerate(rows)
-        response = response_field == :metric ? row.metric : row.synchrony
         matrix[i, :] .= (
             row.model,
             row.scenario,
@@ -937,21 +883,7 @@ function node_slowdown_rows_to_matrix(rows; response_field=:metric)
             row.target_nodes,
             row.d_slow,
             row.percent_reduction,
-            response,
-        )
-    end
-    return matrix
-end
-
-function speedup_synchrony_rows_to_matrix(rows)
-    matrix = Matrix{Any}(undef, length(rows), 5)
-    for (i, row) in enumerate(rows)
-        matrix[i, :] .= (
-            row.model,
-            row.scenario,
-            row.label,
-            row.movement_rate,
-            row.synchrony,
+            row.metric,
         )
     end
     return matrix
@@ -1005,7 +937,7 @@ function pulse_cv_rows_to_matrix(rows)
 end
 
 function hub_pulse_rows_to_matrix(rows)
-    matrix = Matrix{Any}(undef, length(rows), 12)
+    matrix = Matrix{Any}(undef, length(rows), 11)
     for (i, row) in enumerate(rows)
         matrix[i, :] .= (
             row.model,
@@ -1019,7 +951,6 @@ function hub_pulse_rows_to_matrix(rows)
             row.pulse_period,
             row.pulse_duration,
             row.metric,
-            row.synchrony,
         )
     end
     return matrix
@@ -1262,8 +1193,6 @@ end
 function row_y_value(row, yfield)
     if yfield == :metric
         return row.metric
-    elseif yfield == :synchrony
-        return row.synchrony
     elseif yfield == :mean_C5
         return row.mean_C5
     elseif yfield == :cv_C5
@@ -1272,7 +1201,7 @@ function row_y_value(row, yfield)
     error("Unsupported yfield: " * string(yfield))
 end
 
-function plot_rows(rows, output_stem; title="", xlabel, ylabel, xfield=:movement_rate, yfield=:metric, legend=false)
+function plot_rows(rows, output_stem; xlabel, ylabel, xfield=:movement_rate, yfield=:metric)
     mkpath(dirname(output_stem))
 
     scenario_order = unique([row.scenario for row in rows])
@@ -1639,12 +1568,6 @@ function main()
     )
 
     save_table(
-        joinpath(OUTPUT_DIR, "hub_rm_speedup_synchrony_scan.csv"),
-        ["model", "scenario", "label", "movement_rate", "average_pairwise_consumer_synchrony"],
-        speedup_synchrony_rows_to_matrix(hub_speedup_rows),
-    )
-
-    save_table(
         joinpath(OUTPUT_DIR, "hub_rm_slowdown_scan.csv"),
         [
             "model",
@@ -1656,20 +1579,6 @@ function main()
             "average_consumer_temporal_cv",
         ],
         node_slowdown_rows_to_matrix(hub_slowdown_rows),
-    )
-
-    save_table(
-        joinpath(OUTPUT_DIR, "hub_rm_slowdown_synchrony_scan.csv"),
-        [
-            "model",
-            "scenario",
-            "label",
-            "target_nodes",
-            "d_slow",
-            "percent_reduction",
-            "average_pairwise_consumer_synchrony",
-        ],
-        node_slowdown_rows_to_matrix(hub_slowdown_rows; response_field=:synchrony),
     )
 
     save_table(
@@ -1686,7 +1595,6 @@ function main()
             "pulse_period",
             "pulse_duration",
             "average_consumer_temporal_cv",
-            "average_pairwise_consumer_synchrony",
         ],
         hub_pulse_rows_to_matrix(hub_pulse_rows),
     )
@@ -1703,19 +1611,15 @@ function main()
     plot_rows(
         terminal_speedup_rows,
         joinpath(OUTPUT_DIR, "terminal_nrc_speedup_scan");
-        title="Directional terminal N-R-C model: nutrient movement gradient",
         xlabel="Directional nutrient flux rate",
         ylabel="CV of C5",
-        legend=false,
     )
     plot_rows(
         terminal_slowdown_rows,
         joinpath(OUTPUT_DIR, "terminal_nrc_slowdown_scan");
-        title="Directional terminal N-R-C model: targeted nutrient slow-down",
         xlabel="Reduction in outgoing nutrient-transfer rate (%)",
         ylabel="Consumer CV",
         xfield=:percent_reduction,
-        legend=:bottomleft,
     )
     plot_rows(
         terminal_pulse_rows,
@@ -1724,7 +1628,6 @@ function main()
         ylabel="Mean C5",
         xfield=:constant_flux_rate,
         yfield=:mean_C5,
-        legend=false,
     )
     plot_rows(
         terminal_pulse_rows,
@@ -1733,7 +1636,6 @@ function main()
         ylabel="CV of C5",
         xfield=:constant_flux_rate,
         yfield=:cv_C5,
-        legend=false,
     )
     plot_terminal_pulse_figure_s1(
         terminal_pulse_rows,
@@ -1745,7 +1647,6 @@ function main()
         xlabel="Constant dispersal rate",
         ylabel="Average consumer CV",
         xfield=:constant_dispersal_rate,
-        legend=false,
     )
     plot_hub_pulse_figure(
         hub_pulse_rows,
@@ -1754,36 +1655,15 @@ function main()
     plot_rows(
         hub_speedup_rows,
         joinpath(OUTPUT_DIR, "hub_rm_speedup_scan");
-        title="Well-mixed hub CR metacommunity: dispersal gradient",
         xlabel="Resource and consumer dispersal rate across all links",
         ylabel="Average consumer temporal CV",
-        legend=false,
-    )
-    plot_rows(
-        hub_speedup_rows,
-        joinpath(OUTPUT_DIR, "hub_rm_speedup_synchrony_scan");
-        xlabel="Resource and consumer dispersal rate across all links",
-        ylabel="Average pairwise consumer synchrony",
-        yfield=:synchrony,
-        legend=false,
     )
     plot_rows(
         hub_slowdown_rows,
         joinpath(OUTPUT_DIR, "hub_rm_slowdown_scan");
-        title="Well-mixed hub CR metacommunity: node currency-transfer slowdown",
         xlabel="Reduction in node currency-transfer rate (%)",
         ylabel="Average consumer CV",
         xfield=:percent_reduction,
-        legend=:topleft,
-    )
-    plot_rows(
-        hub_slowdown_rows,
-        joinpath(OUTPUT_DIR, "hub_rm_slowdown_synchrony_scan");
-        xlabel="Reduction in node currency-transfer rate (%)",
-        ylabel="Average pairwise consumer synchrony",
-        xfield=:percent_reduction,
-        yfield=:synchrony,
-        legend=:outerright,
     )
 
     println()
