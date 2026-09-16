@@ -1,5 +1,5 @@
 
-# Two spatial food-web models and their movement experiments.
+# Two spatial food web/network models and their movement experiments.
 #
 # 1. A terminal N-R-C network in which nutrients move toward node 5.
 # 2. A hub network with local Rosenzweig-MacArthur dynamics and dispersal.
