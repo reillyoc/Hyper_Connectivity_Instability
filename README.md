@@ -1,4 +1,4 @@
-# Connectivity
+# Hyper Connectivity and Instability in Large Scale Socio Ecological Networks
 
 ## Run the Julia movement-gradient experiment
 
